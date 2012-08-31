@@ -1,7 +1,7 @@
-thumbelina
-==========
+Thumbelina Scheme 
+=================
 
-Thumbelina Scheme - my study lisp interpreter, influenced by and implemented in Haskell
+- my study lisp interpreter, influenced by and implemented in Haskell
 
 Functionality:
 * 0) simplistic repl
