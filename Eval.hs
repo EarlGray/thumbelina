@@ -35,6 +35,16 @@ builtins = [
     ("+",       SAtom $ AtomEvaluator nativeAdd 2),
     ("*",       SAtom $ AtomEvaluator nativeMul 2)]
 
+lookupSymbol :: Env -> String -> SExpr       -- maybe SError
+lookupSymbol env sym = lookupInFrames (frames env) sym
+  where lookupInFrames [] sym     = SError $ "Symbol " ++ show sym ++ " not found"
+        lookupInFrames (f:fs) sym = fromMaybe (lookupInFrames fs sym) $ M.lookup sym f
+
+envAddSymbol :: String -> SExpr -> Env -> Env
+envAddSymbol name val env = Env (updatedFrame:others)
+  where (frame:others) = frames env
+        updatedFrame = M.insert name val frame
+
 {--
  - Native functions
  -}
@@ -85,6 +95,7 @@ eval env (SList ss@((SAtom hd):tl)) =
       AtomSymbol "if" -> fromMaybe result $ withEnv env $ assertFormLength 4 ss
         where (predf:(thenf:(elsef:_))) = tl
               result = (evalIf env predf thenf elsef)
+      AtomSymbol "def" -> evalDef env tl
       AtomSymbol "car" -> fromMaybe (car, env') $ withEnv env $ assertFormLength 2 ss
         where (arg, env') = eval env (head tl)
               car = case arg of
@@ -115,13 +126,13 @@ evalIf env predicate thenf elsef =
         SError _ -> (p, env')
         _ -> if isTrue p then eval env thenf else eval env elsef
 
-lookupSymbol :: Env -> String -> SExpr       -- maybe SError
-lookupSymbol env sym = lookupInFrames (frames env) sym
-    where lookupInFrames [] sym     = SError $ "Symbol " ++ show sym ++ " not found"
-          lookupInFrames (f:fs) sym = fromMaybe (lookupInFrames fs sym) $ M.lookup sym f
-
-envAddSymbol :: String -> SExpr -> Env -> Env
-envAddSymbol name val env = env
+evalDef :: Env -> [SExpr] -> (SExpr, Env)
+evalDef env ((SAtom defatom):defval:[]) =
+  case defatom of
+    sym@(AtomSymbol symname) -> (SAtom sym, envAddSymbol symname evaluatedVal env')
+    _ -> (SError "evalDef: a symbol must be defined", env)
+  where (evaluatedVal, env') = eval env defval
+evalDef env _ = (SError "evalDef: def error", env)
 
 applySymbol :: String -> [SExpr] -> Env -> (SExpr, Env)
 applySymbol symname ss env =
@@ -139,6 +150,7 @@ applyEvaluator (AtomEvaluator evalfun argnum) ss env =
         then SError "applySymbol: partial application not implemented yet"
         else SError $"applySymbol: too many arguments, must be " ++ show argnum
 applyEvaluator _ _ _ = SError "applySymbol: cannot apply atom"
+
 
 assertFormLength :: Int -> [SExpr] -> Maybe SExpr
 assertFormLength n ss =
