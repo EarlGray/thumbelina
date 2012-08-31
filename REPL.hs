@@ -25,4 +25,4 @@ sayHello = do
 main :: IO ()
 main = do
     sayHello
-    repl $ makeEnv
+    repl $ initEnv

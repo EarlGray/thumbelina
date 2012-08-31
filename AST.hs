@@ -1,8 +1,9 @@
 module AST (
     SExpr(..),
     Atom(..),
+    Evaluator,
 
-    topSExprs, 
+    topSExprs,
     readSExpr,
     makeSExp,
 
@@ -26,6 +27,9 @@ data Atom = AtomInt Integer
           | AtomFloat Float
           | AtomString String
           | AtomSymbol String
+          | AtomEvaluator Evaluator Int  -- native form, number of arguments
+
+type Evaluator = ([SExpr] -> SExpr)
 
 truthConst = "#t"
 falseConst = "#f"
@@ -40,6 +44,7 @@ instance Show Atom where
     show (AtomFloat f) = show f ++ "f"
     show (AtomString s) = show s
     show (AtomSymbol sym) = sym
+    show (AtomEvaluator _ argnum) = "#builtin/" ++ show argnum
 
 toSymbol :: String -> SExpr
 toSymbol s = SAtom $ AtomSymbol s
@@ -68,15 +73,15 @@ readSExpr s = let (se, ls) = makeSExp $ lexicalAnalyzer s
 
 topSExprs :: [Lexeme] -> [SExpr]
 topSExprs ls = topSExprs' [] ls
-    where 
+    where
     topSExprs' ss [] = reverse ss
-    topSExprs' ss ls = 
+    topSExprs' ss ls =
       let (s, ls') = makeSExp ls
-      in topSExprs' (s:ss) ls'                 
+      in topSExprs' (s:ss) ls'
 
 makeSExp :: [Lexeme] -> (SExpr, [Lexeme])
 makeSExp [] = (SError "no lexemes", [])
-makeSExp (l:ls) = 
+makeSExp (l:ls) =
     case l of
       LInt i -> (SAtom $ AtomInt i, ls)
       LFloat f -> (SAtom $ AtomFloat f, ls)
