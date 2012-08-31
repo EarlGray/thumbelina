@@ -79,7 +79,7 @@ eval env (SList []) = (SAtom $ AtomSymbol "nil", env)
 -- form starting with an atom
 eval env (SList ss@((SAtom hd):tl)) =
     case hd of
-      etor@(AtomEvaluator _ _) -> (applyEvaluator etor tl, env)
+      etor@(AtomEvaluator _ _) -> (applyEvaluator etor tl env, env)
       AtomSymbol "quote" -> (val, env)
         where val = fromMaybe (head tl) $ assertFormLength 2 ss
       AtomSymbol "if" -> fromMaybe result $ withEnv env $ assertFormLength 4 ss
@@ -128,16 +128,17 @@ applySymbol symname ss env =
     let sym = lookupSymbol env symname
     in case sym of
           SError _ -> (sym, env)
-          SAtom atom -> (applyEvaluator atom ss, env)
+          SAtom atom -> (applyEvaluator atom ss env, env)
           _ -> (SError "applySymbol: cannot apply a list or whatever", env)
 
-applyEvaluator :: Atom -> [SExpr] -> SExpr
-applyEvaluator (AtomEvaluator evalfun argnum) ss =
-    if argnum == length ss then evalfun ss
-    else if argnum > length ss
-      then SError "applySymbol: partial application not implemented yet"
-      else SError $"applySymbol: too many arguments, must be " ++ show argnum
-applyEvaluator _ _ = SError "applySymbol: cannot apply atom"
+applyEvaluator :: Atom -> [SExpr] -> Env -> SExpr
+applyEvaluator (AtomEvaluator evalfun argnum) ss env =
+  let ess = map (fst . eval env) ss -- TODO: env may change
+  in  if argnum == length ess then evalfun ess
+      else if argnum > length ess
+        then SError "applySymbol: partial application not implemented yet"
+        else SError $"applySymbol: too many arguments, must be " ++ show argnum
+applyEvaluator _ _ _ = SError "applySymbol: cannot apply atom"
 
 assertFormLength :: Int -> [SExpr] -> Maybe SExpr
 assertFormLength n ss =
