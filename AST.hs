@@ -12,7 +12,8 @@ module AST (
     quote,
 
     isTrue,
-    falseConst
+    bTrue,
+    bFalse
 ) where
 
 import LexAn
@@ -31,8 +32,9 @@ data Atom = AtomInt Integer
 
 type Evaluator = ([SExpr] -> SExpr)
 
-truthConst = "#t"
-falseConst = "#f"
+bTrue, bFalse :: String
+bTrue = "t"
+bFalse = "nil"
 
 instance Show SExpr where
     show (SError s) = "*** " ++ s
