@@ -55,6 +55,8 @@ builtins = [
     ("car",     etor ntCAR 1),
     ("cdr",     etor ntCDR 1)]
 
+instance Show Env where
+    show env = show (frames env)
 
 {--
  - Native functions
@@ -135,7 +137,7 @@ eval env (SList []) = (toSymbol bFalse, env)
 -- form starting with an atom
 eval env (SList ss@((SAtom hd):tl)) =
   case hd of
-    etor@(AtomEvaluator _ _) -> (applyEvaluator etor tl env, env)
+    etor@(AtomEvaluator _ _) -> applyEvaluator env "?" etor tl
     -- special forms
     AtomSymbol "quote" -> (evalQuote tl, env)
     AtomSymbol "if" -> evalIf env tl
@@ -146,11 +148,14 @@ eval env (SList ss@((SAtom hd):tl)) =
     AtomSymbol sym -> applySymbol sym tl env
     _ -> (SError "eval: form must start with a symbol or a form", env)
 
+-- form starting with a lambda
+eval env (SList (hd:tl)) | isLambda hd =
+    applyLambda env hd tl
+
 -- form starting with a form
 eval env (SList ss@((SList hd):tl)) = eval env' (SList (form:tl))
   where (sexpr, env') = eval env (SList hd)
         form = case sexpr of
-                SList ((SAtom symLambda):_) -> SError "eval: TODO lambda evaluation"
                 SList _ -> SError "eval: the head of form evals to list"
                 _ -> sexpr
 
@@ -200,19 +205,33 @@ applySymbol symname ss env =
     let sym = lookupSymbol env symname
     in case sym of
           SError _ -> (sym, env)
-          SAtom atom -> (applyEvaluator atom ss env, env)
+          SAtom atom -> applyEvaluator env symname atom ss
           SList ((SAtom symLambda):_) -> applyLambda env sym ss
           _ -> (SError "applySymbol: cannot apply a list or whatever", env)
 
-applyEvaluator :: Atom -> [SExpr] -> Env -> SExpr
-applyEvaluator (AtomEvaluator evalfun argnum) ss env =
-  let ess = map (fst . eval env) ss -- TODO: env may change
-  in  if argnum == length ess then evalfun ess
-      else if argnum > length ess
-        then SError "applySymbol: partial application not implemented yet"
-        else SError $"applySymbol: too many arguments, must be " ++ show argnum
-applyEvaluator _ _ _ = SError "applySymbol: cannot apply atom"
+applyEvaluator :: Env -> String -> Atom -> [SExpr] -> (SExpr, Env)
+applyEvaluator env _ (AtomEvaluator evalfun argnum) ss | length ss > argnum =
+    (SError $ "applyEvaluator: too many arguments, must be " ++ show argnum, env)
+-- partial evaluation:
+applyEvaluator env sym etor@(AtomEvaluator evalfun argnum) ss | length ss < argnum =
+    applyLambda env' lambda ss  -- lambda is a lambda-wrapper on evaluator
+    where (lambda, env') = makeLambda env (SList largs : lbody : [])
+           -- TODO: this is not safe, change to kind of GENSYM:
+          largs = map (toSymbol . ("_a" ++) . show) [1..argnum]
+          lbody = SList (toSymbol sym : largs)
+applyEvaluator env _ (AtomEvaluator evalfun argnum) ss =
+    let --ess = map (fst . eval env) ss -- TODO: env may change
+        (ess, env') = evalArgs env ss
+    in case filter (isJust.maybeSError) ess of
+        (err@(SError _):_) -> (err, env') -- at least one eval(arg) has failed
+        [] -> (evalfun ess, env')         -- eval
+applyEvaluator env _ _ _ = (SError "applyEvaluator: cannot apply atom", env)
 
+-- this routine evaluates 'ss' sequentially, accumulating changes to 'env'
+evalArgs :: Env -> [SExpr] -> ([SExpr], Env)
+evalArgs startenv ss = (tail evalss, last envs)
+  where (evalss, envs) = unzip $ scanl evalArg (SList [], startenv) ss
+        evalArg (_,env) sexpr = eval env sexpr
 
 {--
  -  Lambdas
@@ -220,7 +239,7 @@ applyEvaluator _ _ _ = SError "applySymbol: cannot apply atom"
 symLambda = AtomSymbol "lambda"
 
 isLambda :: SExpr -> Bool
-isLambda (SList ((SAtom symLambda):_)) = True
+isLambda (SList (hd:_)) | symbolName hd == Just "lambda" = True
 isLambda _ = False
 
 lambdaArgs :: SExpr -> [String]
@@ -232,12 +251,30 @@ lambdaBody :: SExpr -> SExpr
 lambdaBody (SList ((SAtom symLambda):_:body:[])) = body
 lambdaBody _ = SError "lambdaBody: error"
 
+lambdaParts :: SExpr -> ([SExpr], SExpr)
+lambdaParts (SList ((SAtom symLambda):(SList args):body:[])) = (args, body)
+lambdaParts _ = ([], SError "lambdaParts")
+
 applyLambda :: Env -> SExpr -> [SExpr] -> (SExpr, Env)
-applyLambda env func args | length (args) == length argnames =
+applyLambda env func args | length args == length argnames =
     mapSnd stripEnvFrame $ eval fenv (lambdaBody func)
-    where fenv = makeEnvWith (zip argnames argvals) env
-          argvals = map (fst . eval env) args
+    where fenv = makeEnvWith (zip argnames argvals) env'
+          (argvals, env') = evalArgs env args --map (fst . eval env) args
           argnames = lambdaArgs func
+-- partial application: make a lambda with a slice of arguments
+--   and with (def arg1 exp1) clauses within body
+applyLambda env func args | length args < length arglist =
+    makeLambda env $ (SList newargs : SList newbody : [])
+    where (arglist, body) = lambdaParts func
+          (argdefs, newargs) = splitAt (length args) arglist
+          defs = (toSymbol "begin" : map makeDef (zip argdefs args))
+          makeDef (a,d) = SList [toSymbol "def", a, d]
+          newbody = case body of
+                     SAtom atom -> defs ++ [body]
+                     SList form -> case form of
+                                    (bg : ss) | symbolName bg == Just "begin" -> defs ++ ss
+                                    _ -> defs ++ [body]
+
 applyLambda env func args = (err, env)
     where err = SError $ "applyLambda: " ++ show (length args) ++
                    " arguments for func/" ++ show (length $ lambdaArgs func)
@@ -248,7 +285,7 @@ makeLambda env ((SList arglist):expr:[]) | all (isJust.symbolName) arglist =
 makeLambda env ((SList arglist):body) | all (isJust.symbolName) arglist =
     (lambda, env)
     where lambda = SList ((SAtom symLambda):(SList arglist):seqExpr:[])
-          seqExpr = SList [toSymbol "begin", SList body]
+          seqExpr = SList (toSymbol "begin" : body)
 makeLambda env _ =
     (SError "makeLambda: (lambda (arg1 arg2 ...) expr1 expr2 ...)", env)
 

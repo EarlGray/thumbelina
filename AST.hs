@@ -7,6 +7,8 @@ module AST (
     readSExpr,
     makeSExp,
 
+    maybeSError,
+
     toSymbol,
     symbolName,
     quote,
@@ -47,6 +49,11 @@ instance Show Atom where
     show (AtomString s) = show s
     show (AtomSymbol sym) = sym
     show (AtomEvaluator _ argnum) = "#builtin/" ++ show argnum
+
+maybeSError :: SExpr -> Maybe String
+maybeSError s = case s of
+    SError err -> Just err
+    _ -> Nothing
 
 toSymbol :: String -> SExpr
 toSymbol s = SAtom $ AtomSymbol s
