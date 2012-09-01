@@ -235,9 +235,9 @@ lambdaBody _ = SError "lambdaBody: error"
 applyLambda :: Env -> SExpr -> [SExpr] -> (SExpr, Env)
 applyLambda env func args | length (args) == length argnames =
     mapSnd stripEnvFrame $ eval fenv (lambdaBody func)
-    where argvals = map (fst . eval env) args
+    where fenv = makeEnvWith (zip argnames argvals) env
+          argvals = map (fst . eval env) args
           argnames = lambdaArgs func
-          fenv = makeEnvWith (zip argnames argvals) env
 applyLambda env func args = (err, env)
     where err = SError $ "applyLambda: " ++ show (length args) ++
                    " arguments for func/" ++ show (length $ lambdaArgs func)
