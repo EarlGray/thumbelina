@@ -7,7 +7,6 @@ module Eval (
 ) where
 
 import AST
-import LexAn
 
 import Data.Maybe (fromMaybe, fromJust, isJust)
 import qualified Data.Map as M
