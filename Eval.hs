@@ -6,7 +6,8 @@ module Eval (
     eval
 ) where
 
-import AST
+import Sexps
+import Read
 
 import Data.Maybe (fromMaybe, fromJust, isJust)
 import qualified Data.Map as M
