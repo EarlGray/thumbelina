@@ -1,21 +1,10 @@
 module AST (
-    SExpr(..),
-    Atom(..),
-    Evaluator,
+    SExpr(..), Atom(..), LEvaluator,
 
-    topSExprs,
-    readSExpr,
-    makeSExp,
-
-    maybeSError,
-
-    toSymbol,
-    symbolName,
-    quote,
-
-    isTrue,
-    bTrue,
-    bFalse
+    topSExprs, readSExpr, makeSExp,
+    sexpInt, sexpFloat, sexpStr, sexpSym, sexpEtor,
+    symbolName, isSymbol, quote, maybeSError,
+    isTrue, bTrue, bFalse, toBoolSym
 ) where
 
 import LexAn
@@ -26,13 +15,13 @@ data SExpr = SList [SExpr]
            | SAtom Atom
            | SError String
 
-data Atom = AtomInt Integer
-          | AtomFloat Float
-          | AtomString String
-          | AtomSymbol String
-          | AtomEvaluator Evaluator Int  -- native form, number of arguments
+data Atom = AInt Integer
+          | AFloat Float
+          | AString String
+          | ASymbol String
+          | AEvaluator LEvaluator Int  -- native form, number of arguments
 
-type Evaluator = ([SExpr] -> SExpr)
+type LEvaluator = ([SExpr] -> SExpr)
 
 bTrue, bFalse :: String
 bTrue = "t"
@@ -44,37 +33,47 @@ instance Show SExpr where
     show (SList ss) = "(" ++ (intercalate " " $ map show ss) ++ ")"
 
 instance Show Atom where
-    show (AtomInt i) = show i ++ "i"
-    show (AtomFloat f) = show f ++ "f"
-    show (AtomString s) = show s
-    show (AtomSymbol sym) = sym
-    show (AtomEvaluator _ argnum) = "#builtin/" ++ show argnum
+    show (AInt i) = show i
+    show (AFloat f) = show f
+    show (AString s) = show s
+    show (ASymbol sym) = sym
+    show (AEvaluator _ argnum) = "#builtin/" ++ show argnum
+
+instance Eq Atom where
+    (AInt x) == (AInt y)        = x == y
+    (AFloat x) == (AFloat y)    = x == y
+    (AString x) == (AString y)  = x == y
+    (ASymbol x) == (ASymbol y)  = x == y
+    _ == _ = False
 
 maybeSError :: SExpr -> Maybe String
 maybeSError s = case s of
     SError err -> Just err
     _ -> Nothing
 
-toSymbol :: String -> SExpr
-toSymbol s = SAtom $ AtomSymbol s
+sexpInt i   = SAtom $ AInt i
+sexpFloat f = SAtom $ AFloat f
+sexpStr s   = SAtom $ AString s
+sexpSym sym = SAtom $ ASymbol sym
+sexpEtor f n = SAtom $ AEvaluator f n
 
 symbolName :: SExpr -> Maybe String
-symbolName (SAtom a) = symAtomName a
+symbolName (SAtom a) = case a of
+   ASymbol sym -> Just sym
+   _ -> Nothing
 symbolName _ = Nothing
 
-symAtomName :: Atom -> Maybe String
-symAtomName (AtomSymbol sym) = Just sym
-symAtomName _ = Nothing
+isSymbol sym name = symbolName sym == Just name
+
+toBoolSym b = sexpSym $ if b then bTrue else bFalse
 
 isTrue :: SExpr -> Bool
 isTrue (SList []) = False
-isTrue (SAtom atom) = case atom of
-    AtomSymbol "nil" -> False
-    _ -> True
+isTrue sym | symbolName sym == Just "nil" = False
 isTrue _ = True
 
 quote :: SExpr -> SExpr
-quote sexp = SList [toSymbol "quote", sexp]
+quote sexp = SList [sexpSym "quote", sexp]
 
 readSExpr :: String -> SExpr
 readSExpr s = let (se, ls) = makeSExp $ lexicalAnalyzer s
@@ -92,10 +91,10 @@ makeSExp :: [Lexeme] -> (SExpr, [Lexeme])
 makeSExp [] = (SError "no lexemes", [])
 makeSExp (l:ls) =
     case l of
-      LInt i -> (SAtom $ AtomInt i, ls)
-      LFloat f -> (SAtom $ AtomFloat f, ls)
-      LString s -> (SAtom $ AtomString s, ls)
-      LSymbol sym -> (SAtom $ AtomSymbol sym, ls)
+      LInt i -> (SAtom $ AInt i, ls)
+      LFloat f -> (SAtom $ AFloat f, ls)
+      LString s -> (SAtom $ AString s, ls)
+      LSymbol sym -> (SAtom $ ASymbol sym, ls)
       LSP -> makeSList ls (SList [])
       LQuote -> let (q, ls') = makeSExp ls
                 in (quote q, ls')
