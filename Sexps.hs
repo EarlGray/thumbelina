@@ -3,10 +3,15 @@ module Sexps (
 
     sexpInt, sexpFloat, sexpStr, sexpSym, sexpEtor,
     symbolName, isSymbol, quote, maybeSError,
-    isTrue, bTrue, bFalse, toBoolSym
+    isTrue, bTrue, bFalse, toBoolSym,
+
+    EnvEvaluator, EnvLEvaluator, Env,
+    makeEmptyEnv, makeEnvWith, envAddSymbol, lookupSymbol, stripEnvFrame, initEnv
 ) where
 
 import Data.List (intercalate)
+import Data.Maybe (fromMaybe)
+import qualified Data.Map as M
 
 data SExpr = SList [SExpr]
            | SAtom Atom
@@ -16,7 +21,7 @@ data Atom = AInt Integer
           | AFloat Float
           | AString String
           | ASymbol String
-          | AEvaluator LEvaluator Int  -- native form, number of arguments
+          | AEvaluator EnvLEvaluator Int  -- native form, number of arguments
 
 type LEvaluator = ([SExpr] -> SExpr)
 
@@ -71,3 +76,42 @@ isTrue _ = True
 
 quote :: SExpr -> SExpr
 quote sexp = SList [sexpSym "quote", sexp]
+
+{-
+ - Environments
+ -}
+
+type Frame = M.Map String SExpr
+
+data Env = Env {
+    frames :: [Frame]
+}
+
+type EnvEvaluator = (Env -> SExpr -> (SExpr, Env))
+type EnvLEvaluator = (Env -> [SExpr] -> (SExpr, Env))
+
+makeEmptyEnv :: Env -> Env
+makeEmptyEnv env = env { frames = (M.empty : frames env) }
+
+makeEnvWith :: [(String, SExpr)] -> Env -> Env
+makeEnvWith vs env = env { frames = (M.fromList vs : frames env) }
+
+initEnv :: [(String, SExpr)] -> Env
+initEnv vs = Env [ M.fromList vs ]
+
+lookupSymbol :: Env -> String -> SExpr       -- maybe SError
+lookupSymbol env sym = lookupInFrames (frames env) sym
+  where lookupInFrames [] sym     = SError $ "Symbol " ++ show sym ++ " not found"
+        lookupInFrames (f:fs) sym = fromMaybe (lookupInFrames fs sym) $ M.lookup sym f
+
+stripEnvFrame :: Env -> Env
+stripEnvFrame env = env { frames = (tail $ frames env) }
+
+envAddSymbol :: String -> SExpr -> Env -> Env
+envAddSymbol name val env = Env (updatedFrame:others)
+  where (frame:others) = frames env
+        updatedFrame = M.insert name val frame
+
+instance Show Env where
+    show env = show (frames env)
+

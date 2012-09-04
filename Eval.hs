@@ -1,8 +1,6 @@
 module Eval (
     Env,
-    initEnv,
-    makeEnvWith,
-    makeEmptyEnv,
+    builtins,
     eval
 ) where
 
@@ -10,49 +8,10 @@ import Sexps
 import Read
 
 import Data.Maybe (fromMaybe, fromJust, isJust)
-import qualified Data.Map as M
-
-{-
- - Environments
- -}
-
-type Frame = M.Map String SExpr
-
-data Env = Env {
-    frames :: [Frame]
-}
-
-makeEmptyEnv :: Env -> Env
-makeEmptyEnv env = env { frames = (M.empty : frames env) }
-
-makeEnvWith :: [(String, SExpr)] -> Env -> Env
-makeEnvWith vs env = env { frames = (M.fromList vs : frames env) }
-
-initEnv :: Env
-initEnv = Env [ M.fromList builtins ]
-
-lookupSymbol :: Env -> String -> SExpr       -- maybe SError
-lookupSymbol env sym = lookupInFrames (frames env) sym
-  where lookupInFrames [] sym     = SError $ "Symbol " ++ show sym ++ " not found"
-        lookupInFrames (f:fs) sym = fromMaybe (lookupInFrames fs sym) $ M.lookup sym f
-
-stripEnvFrame :: Env -> Env
-stripEnvFrame env = env { frames = (tail $ frames env) }
-
-envAddSymbol :: String -> SExpr -> Env -> Env
-envAddSymbol name val env = Env (updatedFrame:others)
-  where (frame:others) = frames env
-        updatedFrame = M.insert name val frame
-
-instance Show Env where
-    show env = show (frames env)
 
 {--
  - Eval
  -}
-
-type EnvEvaluator = (Env -> SExpr -> (SExpr, Env))
-type EnvLEvaluator = (Env -> [SExpr] -> (SExpr, Env))
 
 eval :: EnvEvaluator
 
@@ -101,16 +60,12 @@ specials = [
     ("quote", withEnv evalQuote ),
     ("if",      evalIf          ),
     ("def",     evalDef         ),
-    ("eval",    evalEval        ),
     ("lambda",  makeLambda      ),
     ("begin",   evalSeq         )]
 
 evalQuote :: LEvaluator
 evalQuote (sexpr:[]) = sexpr
 evalQuote _ = SError "evalQuote: too many things to quote"
-
-evalEval env (sexpr:[]) = eval env' sexpr'
-    where (sexpr', env') = eval env sexpr
 
 evalIf, evalDef, evalSeq :: EnvLEvaluator
 evalIf env (predf:thenf:elsef:[]) =
@@ -165,7 +120,7 @@ applyEvaluator env _ (AEvaluator evalfun argnum) ss =
     let (ess, env') = evalArgs env ss
     in case filter (isJust.maybeSError) ess of
         (err@(SError _):_) -> (err, env') -- at least one eval(arg) has failed
-        [] -> (evalfun ess, env')         -- eval
+        [] -> evalfun env' ess      -- eval
 applyEvaluator env _ _ _ = (SError "applyEvaluator: cannot apply atom", env)
 
 -- this routine evaluates 'ss' sequentially, accumulating changes to 'env'
@@ -234,25 +189,26 @@ makeLambda env _ =
  -}
 
 builtins = map (mapSnd (uncurry sexpEtor)) [
-    ("+",       (ntAdd, 2)),
-    ("-",       (ntSub, 2)),
-    ("*",       (ntMul, 2)),
-    ("eq",      (ntEq,  2)),
-    ("<",       (ntLess,2)),
+    ("+",       (withEnv ntAdd, 2)),
+    ("-",       (withEnv ntSub, 2)),
+    ("*",       (withEnv ntMul, 2)),
+    ("eq",      (withEnv ntEq,  2)),
+    ("<",       (withEnv ntLess,2)),
 
-    ("and",     (ntAnd, 2)),
-    ("or",      (ntOr,  2)),
-    ("not",     (ntNot, 1)),
+    ("and",     (withEnv ntAnd, 2)),
+    ("or",      (withEnv ntOr,  2)),
+    ("not",     (withEnv ntNot, 1)),
 
-    ("print",   (ntPrint,1)),
-    ("read",    (ntRead,1)),
+    ("print",   (withEnv ntPrint,1)),
+    ("read",    (withEnv ntRead,1)),
+    ("eval",    (ntEval,        1)),
 
-    ("map",     (ntMap, 2)),
-    ("fold",    (ntFold,3)),
-    ("filter",  (ntFlt, 2)),
-    ("cons",    (ntCons,2)),
-    ("car",     (ntCAR, 1)),
-    ("cdr",     (ntCDR, 1))]
+    ("map",     (withEnv ntMap, 2)),
+    ("fold",    (withEnv ntFold,3)),
+    ("filter",  (withEnv ntFlt, 2)),
+    ("cons",    (withEnv ntCons,2)),
+    ("car",     (withEnv ntCAR, 1)),
+    ("cdr",     (withEnv ntCDR, 1))]
 
 
 ntAdd, ntMul, ntSub :: LEvaluator
@@ -304,10 +260,14 @@ ntRead (SAtom a:[]) = case a of
     _ -> SError "read: not a string"
 ntRead _ = SError "read: string expected"
 
+ntEval env (sexpr:[]) = eval env' sexpr'
+    where (sexpr', env') = eval env sexpr
+
 ntMap = undefined
 ntFold = undefined
 ntFlt = undefined
-ntCons = undefined
+ntCons (sexpr:(SList tl):[]) = SList (sexpr:tl)
+ntCons _ = SError "CONS arg error"
 
 ntCAR, ntCDR :: LEvaluator
 ntCAR ((SList list):[]) = case list of
