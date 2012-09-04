@@ -30,8 +30,8 @@ instance Show SExpr where
     show (SList ss) = "(" ++ (intercalate " " $ map show ss) ++ ")"
 
 instance Show Atom where
-    show (AInt i) = show i ++ "i"
-    show (AFloat f) = show f ++ "f"
+    show (AInt i) = show i
+    show (AFloat f) = show f
     show (AString s) = show s
     show (ASymbol sym) = sym
     show (AEvaluator _ argnum) = "#builtin/" ++ show argnum

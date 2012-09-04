@@ -5,24 +5,23 @@ module Read (
 import Sexps
 
 import Control.Monad (liftM)
-import Control.Applicative hiding ((<|>))
+import Control.Applicative hiding ((<|>), optional, many)
 import Text.Parsec
 import Text.ParserCombinators.Parsec (CharParser(..))
 
 readSExpr :: String -> SExpr
-readSExpr = parseToSexpr . parse sexpParser ""
+readSExpr = fromEither reportError . parse (seps *> sexpParser <* seps <* eof) ""
 
 topSExprs :: String -> [SExpr]
-topSExprs [] = []
-topSExprs s = parseToLSexpr $ parse (sexpParser `sepEndBy` spaces) "" s
+topSExprs = fromEither reportLError . parse (sexpParser `sepEndBy` seps) ""
 
-parseToSexpr = fromEither (SError . show)
-parseToLSexpr = fromEither ((:[]) . SError . show)
+reportError = SError . show -- const (SError "read error")
+reportLError = const [SError "read error"]
 
 sexpParser :: CharParser st SExpr
-sexpParser = squote <|> slist <|> satom <?> "Not a list or atom"
+sexpParser = squote <|> slist <|> satom <?> "a list or atom expected"
 
-slist = SList <$> (opPar *> (sexpParser `sepEndBy` spaces) <* clPar)
+slist = SList <$> (opPar *> (sexpParser `sepEndBy` seps) <* clPar)
 satom = try snum <|> try sstring <|> ssym
 snum = do
     s <- many1 symchars
@@ -35,10 +34,11 @@ sstring = sexpStr <$> (quCh >> manyTill quotedChar quCh)
 ssym = sexpSym <$> many1 symchars
 squote = quote <$> (char '\'' >> sexpParser)
 
--- TODO : comments
-quotedChar = noneOf "\\" <|> try (string "\\\"" >> return '"') 
-symchars = noneOf " \n\t()"
+quotedChar = noneOf "\\" <|> try (string "\\\"" >> return '"')
+symchars = noneOf "'(); \n\t"
 
+seps = spaces *> optional comment <* spaces
+comment = char ';' >> many (noneOf "\n")
 escapes = zip "ntr" "\n\t\r"
 
 quCh = char '"'

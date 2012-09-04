@@ -44,63 +44,8 @@ envAddSymbol name val env = Env (updatedFrame:others)
   where (frame:others) = frames env
         updatedFrame = M.insert name val frame
 
-builtins = map (mapSnd (uncurry sexpEtor)) [
-    ("+",       (ntAdd, 2)),
-    ("-",       (ntSub, 2)),
-    ("*",       (ntMul, 2)),
-    ("eq",      (ntEq,  2)),
-    ("car",     (ntCAR, 1)),
-    ("cdr",     (ntCDR, 1))]
-
 instance Show Env where
     show env = show (frames env)
-
-{--
- - Native functions
- -}
-
-ntAdd, ntMul, ntSub :: LEvaluator
-ntAdd ((SAtom ax):(SAtom ay):[]) = ntAdd' ax ay
-  where ntAdd' (AInt xi) (AInt yi)      = sexpInt (xi + yi)
-        ntAdd' (AFloat xf) (AFloat yf)  = sexpFloat (xf + yf)
-        ntAdd' (AString xs) (AString ys)= sexpStr (xs ++ ys)
-        ntAdd' _ _ = SError "Add: type mismatch"
-ntAdd _ = SError "Add requires two atom arguments"
-
-ntSub ((SAtom ax):(SAtom ay):[]) = ntSub' ax ay
-  where ntSub' (AInt x)  (AInt y)     = sexpInt (x - y)
-        ntSub' (AFloat x) (AFloat y)  = sexpFloat (x - y)
-        ntSub' _ _ = SError "Sub: type mismatch"
-ntSub _ = SError "Sub requires two atom arguments"
-
-ntMul ((SAtom ax):(SAtom ay):[]) = ntMul' ax ay
-  where ntMul' (AInt xi)   (AInt yi)    = sexpInt (xi * yi)
-        ntMul' (AFloat xf) (AFloat yf)  = sexpFloat (xf * yf)
-        ntMul' (AString xs) (AInt yi)   =
-                       sexpStr $ concat $ replicate (fromInteger yi) xs
-        ntMul' _ _ = SError "ntMul: type mismatch"
-ntMul _ = SError "Mul requires two atom arguments"
-
-ntEq :: LEvaluator
-ntEq ((SAtom ax):(SAtom ay):[]) = toBoolSym (ax == ay)
-ntEq ((SList lx):(SList ly):[]) = toBoolSym (eqL lx ly)
-  where eqL [] [] = True
-        eqL _ [] = False
-        eqL [] _ = False
-        eqL (x:xs) (y:ys) =
-            isTrue (ntEq [x,y]) && isTrue (ntEq [SList xs, SList ys])
-ntEq _ = SError "EQ requires two arguments"
-
-ntCAR, ntCDR :: LEvaluator
-ntCAR ((SList list):[]) = case list of
-    (t:_) -> t
-    _ -> SError "CAR at empty list"
-ntCAR _ = SError "CAR requires one list argument"
-
-ntCDR ((SList list):[]) = case list of
-    (_:t) -> SList t
-    _ -> SError "CDR: no tail"
-ntCDR _ = SError "CDR requires one list argument"
 
 {--
  - Eval
@@ -129,14 +74,9 @@ eval env (SList []) = (sexpSym bFalse, env)
 eval env (SList ss@((SAtom hd):tl)) =
   case hd of
     etor@(AEvaluator _ _) -> applyEvaluator env "?" etor tl
-    -- special forms
-    ASymbol "quote" -> (evalQuote tl, env)
-    ASymbol "if" -> evalIf env tl
-    ASymbol "def" -> evalDef env tl
-    ASymbol "lambda" -> makeLambda env tl
-    ASymbol "begin" -> evalSeq env tl
-
-    ASymbol sym -> applySymbol sym tl env
+    ASymbol sym -> case lookup sym specials of
+        Just specform -> specform env tl
+        Nothing -> applySymbol sym tl env
     _ -> (SError "eval: form must start with a symbol or a form", env)
 
 -- form starting with a lambda
@@ -153,10 +93,24 @@ eval env (SList ss@((SList hd):tl)) = eval env' (SList (form:tl))
 -- unknown thing
 eval env _ = (SError "eval error", env)
 
+{-
+ -  Special forms
+ -}
+
+specials = [
+    ("quote", withEnv evalQuote ),
+    ("if",      evalIf          ),
+    ("def",     evalDef         ),
+    ("eval",    evalEval        ),
+    ("lambda",  makeLambda      ),
+    ("begin",   evalSeq         )]
 
 evalQuote :: LEvaluator
 evalQuote (sexpr:[]) = sexpr
 evalQuote _ = SError "evalQuote: too many things to quote"
+
+evalEval env (sexpr:[]) = eval env' sexpr'
+    where (sexpr', env') = eval env sexpr
 
 evalIf, evalDef, evalSeq :: EnvLEvaluator
 evalIf env (predf:thenf:elsef:[]) =
@@ -275,9 +229,100 @@ makeLambda env ((SList arglist):body) | all (isJust.symbolName) arglist =
 makeLambda env _ =
     (SError "makeLambda: (lambda (arg1 arg2 ...) expr1 expr2 ...)", env)
 
+{--
+ - Native functions
+ -}
 
-withEnv :: Env -> Maybe SExpr -> Maybe (SExpr, Env)
-withEnv env = fmap (flip (,) env)
+builtins = map (mapSnd (uncurry sexpEtor)) [
+    ("+",       (ntAdd, 2)),
+    ("-",       (ntSub, 2)),
+    ("*",       (ntMul, 2)),
+    ("eq",      (ntEq,  2)),
+    ("<",       (ntLess,2)),
+
+    ("and",     (ntAnd, 2)),
+    ("or",      (ntOr,  2)),
+    ("not",     (ntNot, 1)),
+
+    ("print",   (ntPrint,1)),
+    ("read",    (ntRead,1)),
+
+    ("map",     (ntMap, 2)),
+    ("fold",    (ntFold,3)),
+    ("filter",  (ntFlt, 2)),
+    ("cons",    (ntCons,2)),
+    ("car",     (ntCAR, 1)),
+    ("cdr",     (ntCDR, 1))]
+
+
+ntAdd, ntMul, ntSub :: LEvaluator
+ntAdd ((SAtom ax):(SAtom ay):[]) = ntAdd' ax ay
+  where ntAdd' (AInt xi) (AInt yi)      = sexpInt (xi + yi)
+        ntAdd' (AFloat xf) (AFloat yf)  = sexpFloat (xf + yf)
+        ntAdd' (AString xs) (AString ys)= sexpStr (xs ++ ys)
+        ntAdd' _ _ = SError "Add: type mismatch"
+ntAdd _ = SError "Add requires two atom arguments"
+
+ntSub ((SAtom ax):(SAtom ay):[]) = ntSub' ax ay
+  where ntSub' (AInt x)  (AInt y)     = sexpInt (x - y)
+        ntSub' (AFloat x) (AFloat y)  = sexpFloat (x - y)
+        ntSub' _ _ = SError "Sub: type mismatch"
+ntSub _ = SError "Sub requires two atom arguments"
+
+ntMul ((SAtom ax):(SAtom ay):[]) = ntMul' ax ay
+  where ntMul' (AInt xi)   (AInt yi)    = sexpInt (xi * yi)
+        ntMul' (AFloat xf) (AFloat yf)  = sexpFloat (xf * yf)
+        ntMul' (AString xs) (AInt yi)   =
+                       sexpStr $ concat $ replicate (fromInteger yi) xs
+        ntMul' _ _ = SError "ntMul: type mismatch"
+ntMul _ = SError "Mul requires two atom arguments"
+
+ntEq, ntLess :: LEvaluator
+ntEq ((SAtom ax):(SAtom ay):[]) = toBoolSym (ax == ay)
+ntEq ((SList lx):(SList ly):[]) = toBoolSym (eqL lx ly)
+  where eqL [] [] = True
+        eqL _ [] = False
+        eqL [] _ = False
+        eqL (x:xs) (y:ys) =
+            isTrue (ntEq [x,y]) && isTrue (ntEq [SList xs, SList ys])
+ntEq _ = SError "EQ requires two arguments"
+
+ntLess ((SAtom ax):(SAtom ay):[]) = toBoolSym $ ntLess' ax ay
+  where ntLess' (AInt x) (AInt y) = x < y
+        ntLess' (AFloat x) (AFloat y) = x < y
+        ntLess' (AString x) (AString y) = x < y
+        ntLess' _ _ = False
+ntLess _ = SError "don't know how to compare"
+
+ntAnd = undefined
+ntOr = undefined
+ntNot = undefined
+ntPrint = undefined
+
+ntRead (SAtom a:[]) = case a of
+    AString str -> readSExpr str
+    _ -> SError "read: not a string"
+ntRead _ = SError "read: string expected"
+
+ntMap = undefined
+ntFold = undefined
+ntFlt = undefined
+ntCons = undefined
+
+ntCAR, ntCDR :: LEvaluator
+ntCAR ((SList list):[]) = case list of
+    (t:_) -> t
+    _ -> SError "CAR at empty list"
+ntCAR _ = SError "CAR requires one list argument"
+
+ntCDR ((SList list):[]) = case list of
+    (_:t) -> SList t
+    _ -> SError "CDR: no tail"
+ntCDR _ = SError "CDR requires one list argument"
+
+
+withEnv :: (b -> c) -> a -> b -> (c, a)
+withEnv f env x = (f x, env)
 
 withSnd :: b -> a -> (a, b)
 withSnd b a = (a, b)
