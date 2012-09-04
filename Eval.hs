@@ -62,6 +62,7 @@ specials = [
     ("def",     evalDef         ),
     ("lambda",  makeLambda      ),
     ("begin",   evalSeq         )]
+-- TODO: cond, let
 
 evalQuote :: LEvaluator
 evalQuote (sexpr:[]) = sexpr
@@ -107,6 +108,10 @@ applySymbol symname ss env =
           _ -> (SError "applySymbol: cannot apply a list or whatever", env)
 
 applyEvaluator :: Env -> String -> Atom -> [SExpr] -> (SExpr, Env)
+-- let the evalfun jugde the argument count:
+applyEvaluator env _ (AEvaluator evalfun argnum) ss | argnum == (-1) =
+    applyEvaluator' env evalfun ss
+-- too many arguments:
 applyEvaluator env _ (AEvaluator evalfun argnum) ss | length ss > argnum =
     (SError $ "applyEvaluator: too many arguments, must be " ++ show argnum, env)
 -- partial evaluation:
@@ -117,11 +122,14 @@ applyEvaluator env sym etor@(AEvaluator evalfun argnum) ss | length ss < argnum 
           largs = map (sexpSym . ("_arg_" ++) . show) [1..argnum]
           lbody = SList (sexpSym sym : largs)
 applyEvaluator env _ (AEvaluator evalfun argnum) ss =
+    applyEvaluator' env evalfun ss
+applyEvaluator env _ _ _ = (SError "applyEvaluator: cannot apply atom", env)
+
+applyEvaluator' env evalfun ss =
     let (ess, env') = evalArgs env ss
     in case filter (isJust.maybeSError) ess of
         (err@(SError _):_) -> (err, env') -- at least one eval(arg) has failed
         [] -> evalfun env' ess      -- eval
-applyEvaluator env _ _ _ = (SError "applyEvaluator: cannot apply atom", env)
 
 -- this routine evaluates 'ss' sequentially, accumulating changes to 'env'
 evalArgs :: Env -> [SExpr] -> ([SExpr], Env)
@@ -192,26 +200,28 @@ builtins = map (mapSnd (uncurry sexpEtor)) [
     ("+",       (withEnv ntAdd, 2)),
     ("-",       (withEnv ntSub, 2)),
     ("*",       (withEnv ntMul, 2)),
+    ("/",       (withEnv ntDiv, 2)),
     ("eq",      (withEnv ntEq,  2)),
     ("<",       (withEnv ntLess,2)),
 
-    ("and",     (withEnv ntAnd, 2)),
+{-    ("and",     (withEnv ntAnd, 2)),
     ("or",      (withEnv ntOr,  2)),
-    ("not",     (withEnv ntNot, 1)),
+    ("not",     (withEnv ntNot, 1)), -}
 
     ("print",   (withEnv ntPrint,1)),
     ("read",    (withEnv ntRead,1)),
     ("eval",    (ntEval,        1)),
 
-    ("map",     (withEnv ntMap, 2)),
+{-    ("map",     (withEnv ntMap, 2)),
     ("fold",    (withEnv ntFold,3)),
-    ("filter",  (withEnv ntFlt, 2)),
+    ("filter",  (withEnv ntFlt, 2)), -}
+    ("list",    (withEnv ntList,(-1))),
     ("cons",    (withEnv ntCons,2)),
     ("car",     (withEnv ntCAR, 1)),
     ("cdr",     (withEnv ntCDR, 1))]
 
 
-ntAdd, ntMul, ntSub :: LEvaluator
+ntAdd, ntMul, ntSub, ntDiv :: LEvaluator
 ntAdd ((SAtom ax):(SAtom ay):[]) = ntAdd' ax ay
   where ntAdd' (AInt xi) (AInt yi)      = sexpInt (xi + yi)
         ntAdd' (AFloat xf) (AFloat yf)  = sexpFloat (xf + yf)
@@ -219,6 +229,10 @@ ntAdd ((SAtom ax):(SAtom ay):[]) = ntAdd' ax ay
         ntAdd' _ _ = SError "Add: type mismatch"
 ntAdd _ = SError "Add requires two atom arguments"
 
+ntSub ((SAtom a):[]) = case a of
+    AInt i -> sexpInt (-i)
+    AFloat f -> sexpFloat (-f)
+    _ -> SError "only numbers may be negated"
 ntSub ((SAtom ax):(SAtom ay):[]) = ntSub' ax ay
   where ntSub' (AInt x)  (AInt y)     = sexpInt (x - y)
         ntSub' (AFloat x) (AFloat y)  = sexpFloat (x - y)
@@ -232,6 +246,14 @@ ntMul ((SAtom ax):(SAtom ay):[]) = ntMul' ax ay
                        sexpStr $ concat $ replicate (fromInteger yi) xs
         ntMul' _ _ = SError "ntMul: type mismatch"
 ntMul _ = SError "Mul requires two atom arguments"
+
+ntDiv ((SAtom ax):(SAtom ay):[]) = ntDiv' ax ay
+  where ntDiv' (AInt x) (AInt y) | y /= 0    = sexpInt $ x `div` y
+                                 | otherwise = SError "division by zero"
+        ntDiv' (AFloat x) (AFloat y) | y /= 0   = sexpFloat $ x / y
+                                     | otherwise= SError "division by zero"
+        ntDiv' _ _ = SError "only numbers may be divided"
+ntDiv _ = SError "only numbers may be divided"
 
 ntEq, ntLess :: LEvaluator
 ntEq ((SAtom ax):(SAtom ay):[]) = toBoolSym (ax == ay)
@@ -250,9 +272,15 @@ ntLess ((SAtom ax):(SAtom ay):[]) = toBoolSym $ ntLess' ax ay
         ntLess' _ _ = False
 ntLess _ = SError "don't know how to compare"
 
+-- TODO
 ntAnd = undefined
 ntOr = undefined
 ntNot = undefined
+
+ntMap = undefined
+ntFold = undefined
+ntFlt = undefined
+
 ntPrint = undefined
 
 ntRead (SAtom a:[]) = case a of
@@ -263,9 +291,8 @@ ntRead _ = SError "read: string expected"
 ntEval env (sexpr:[]) = eval env' sexpr'
     where (sexpr', env') = eval env sexpr
 
-ntMap = undefined
-ntFold = undefined
-ntFlt = undefined
+ntList vals = SList vals
+
 ntCons (sexpr:(SList tl):[]) = SList (sexpr:tl)
 ntCons _ = SError "CONS arg error"
 
