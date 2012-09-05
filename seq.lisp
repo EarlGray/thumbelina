@@ -14,6 +14,7 @@
         '()))
 
 (def sum (fold (+) 0))
+(def to-string (fold (+) ""))
 (def product (fold (*) 0))
 
 (def zero? (eq 0))
@@ -22,3 +23,12 @@
 (def (and x y) (if x (if y t nil) nil))
 (def (or x y) (if x t (if y t nil)))
 (def (not x) (if x nil t))
+
+(def (concat xs ys)
+    (if xs (cons (car xs) (concat (cdr xs) ys))
+           (if ys (cons (car ys) (concat '() (cdr ys)))
+                  '())))
+
+(def (reverse xs)
+    (if xs (concat (reverse (cdr xs)) (list (car xs)))
+           '()))

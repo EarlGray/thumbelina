@@ -183,20 +183,24 @@ makeLambda env _ =
  -}
 
 builtins = map (mapSnd (uncurry sexpEtor)) [
-    ("+",       (withEnv ntAdd, 2)),
-    ("-",       (withEnv ntSub,-1)),
-    ("*",       (withEnv ntMul, 2)),
-    ("/",       (withEnv ntDiv, 2)),
-    ("eq",      (withEnv ntEq,  2)),
-    ("<",       (withEnv ntLess,2)),
+    ("+",       (withEnv ntAdd, 2)),    -- add Ints, Floats, Strings
+    ("-",       (withEnv ntSub,-1)),    -- negate a single argument; subtract Ints, Floats
+    ("*",       (withEnv ntMul, 2)),    -- mult. Ints, Floats, String*Int
+    ("/",       (withEnv ntDiv, 2)),    -- divide Ints, Floats
+    ("eq",      (withEnv ntEq,  2)),    -- compare atoms and lists
+    ("<",       (withEnv ntLess,2)),    -- Strings, Ints, Floats
 
-    ("read",    (withEnv ntRead,1)),
-    ("eval",    (ntEval,        1)),
+    ("read",    (withEnv ntRead,1)),    -- String -> SExpr
+    ("eval",    (ntEval,        1)),    -- SExpr -> SExpr (side-effects)
 
-    ("list",    (withEnv ntList,(-1))),
-    ("cons",    (withEnv ntCons,2)),
-    ("car",     (withEnv ntCAR, 1)),
-    ("cdr",     (withEnv ntCDR, 1))]
+    ("to-list", (withEnv ntToLst,1)),   -- String -> List
+    ("to-float",(withEnv ntToFl, 1)),   -- Float -> Int
+    ("to-int",  (withEnv ntToInt,1)),   -- Int -> Float
+
+    ("list",    (withEnv ntList,(-1))), -- make a List
+    ("cons",    (withEnv ntCons,2)),    -- (SExpr, SExpr) -> List
+    ("car",     (withEnv ntCAR, 1)),    -- List -> SExpr
+    ("cdr",     (withEnv ntCDR, 1))]    -- List -> List
 
 ntAdd, ntMul, ntSub, ntDiv :: LEvaluator
 ntAdd ((SAtom ax):(SAtom ay):[]) = ntAdd' ax ay
@@ -273,12 +277,20 @@ ntCDR ((SList list):[]) = case list of
     _ -> SError "CDR: no tail"
 ntCDR _ = SError "CDR requires one list argument"
 
+ntToLst ((SAtom a):[]) = case a of
+    AString str -> SList $ map (sexpStr . return) str
+    _ -> SError "a string expected"
+ntToLst _ = SError "a string exprected"
+
+ntToInt ((SAtom (AFloat f)):[]) = sexpInt $ floor f
+ntToInt _ = SError "a float expected"
+
+ntToFl ((SAtom (AInt i)):[]) = sexpFloat $ fromInteger i
+ntToFl _ = SError "an int expected"
+
 
 withEnv :: (b -> c) -> a -> b -> (c, a)
 withEnv f env x = (f x, env)
-
-withSnd :: b -> a -> (a, b)
-withSnd b a = (a, b)
 
 mapSnd :: (b -> c) -> (a, b) -> (a, c)
 mapSnd f (a, b) = (a, f b)
