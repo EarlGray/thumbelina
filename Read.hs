@@ -1,14 +1,10 @@
-module Read (
-    topSExprs, readSExpr
-) where
+module Read ( topSExprs, readSExpr ) where
 
 import Sexps
 
-import Data.Maybe (fromMaybe, fromJust)
-import Control.Monad (liftM)
+import Data.Maybe (fromJust)
 import Control.Applicative hiding ((<|>), optional, many)
-import Text.Parsec
-import Text.ParserCombinators.Parsec (CharParser(..))
+import Text.ParserCombinators.Parsec
 
 readSExpr :: String -> SExpr
 readSExpr = fromEither reportError . parse (seps *> sexpParser <* seps <* eof) ""
@@ -22,7 +18,7 @@ reportLError = const [SError "read error"]
 sexpParser :: CharParser st SExpr
 sexpParser = squote <|> slist <|> satom <?> "a list or atom"
 
-slist = SList <$> (cSP *> (sexpParser `sepEndBy` seps) <* cCP)
+slist = SList <$> (char '(' *> (sexpParser `sepEndBy` seps) <* char ')')
 satom = try snum <|> try sstring <|> ssym
 snum = do
     s <- many1 symchars
@@ -31,19 +27,15 @@ snum = do
       _ -> case reads s :: [(Float, String)] of
         [(f, "")] -> return $ sexpFloat f
         _ -> fail "no int"
-sstring = sexpStr <$> (cQu >> quotedChar `manyTill` cQu)
+sstring = sexpStr <$> (char '"' >> quotedChar `manyTill` (char '"'))
 ssym = sexpSym <$> many1 symchars
 squote = quote <$> (char '\'' >> sexpParser)
 
 quotedChar = (char '\\' >> ((oneOf (fst$unzip escapes) >>= return . fromJust . flip lookup escapes) <|> anyChar)) <|> anyChar
 symchars = noneOf "'(); \n\t"
 
-seps = spaces *> optional comment <* spaces
-comment = char ';' >> many (noneOf "\n")
+seps = spaces *> optional comment
+comment = char ';' >> many (noneOf "\n") <* spaces
 escapes = zip "ntr" "\n\t\r"
-
-cQu = char '"'
-cSP = char '('
-cCP = char ')'
 
 fromEither = flip either id
