@@ -1,8 +1,4 @@
-module Eval (
-    Env,
-    builtins,
-    eval
-) where
+module Eval ( builtins, eval ) where
 
 import Sexps
 import Read
@@ -20,11 +16,11 @@ eval env err@(SError _) = (err, env)
 
 -- self-evaluating expression or a variable
 eval env sAtom@(SAtom atom) =
-    case atom of
-      ASymbol sym | sym == bFalse -> (sAtom, env)
-      ASymbol sym -> (symval, env)
-        where symval = lookupSymbol env sym
-      _ -> (sAtom, env)
+  case atom of
+    ASymbol sym | sym `elem` [bFalse, bTrue] -> (sAtom, env)
+    ASymbol sym -> (symval, env)
+      where symval = lookupSymbol env sym
+    _ -> (sAtom, env)
 
 -- '() -> nil
 eval env (SList []) = (sexpSym bFalse, env)
@@ -94,8 +90,7 @@ evalDef env ((SList defun):defbody) =
 evalDef env _ = (SError "evalDef: def error", env)
 
 evalSeq env (sexpr:[]) = eval env sexpr
-evalSeq env (this:next) = evalSeq env' next
-    where (_, env') = eval env this
+evalSeq env (this:next) = evalSeq (snd $ eval env this) next
 evalSeq env _ = (SError "evalSeq: empty sequence?", env)
 
 applySymbol :: String -> [SExpr] -> Env -> (SExpr, Env)
@@ -104,7 +99,7 @@ applySymbol symname ss env =
     in case sym of
           SError _ -> (sym, env)
           SAtom atom -> applyEvaluator env symname atom ss
-          SList ((SAtom symLambda):_) -> applyLambda env sym ss
+          sexp | isLambda sexp -> applyLambda env sym ss
           _ -> (SError "applySymbol: cannot apply a list or whatever", env)
 
 applyEvaluator :: Env -> String -> Atom -> [SExpr] -> (SExpr, Env)
@@ -140,23 +135,15 @@ evalArgs startenv ss = (tail evalss, last envs)
 {--
  -  Lambdas
  -}
-symLambda = ASymbol "lambda"
-
 isLambda :: SExpr -> Bool
 isLambda (SList (hd:_)) | isSymbol hd "lambda" = True
 isLambda _ = False
 
-lambdaArgs :: SExpr -> [String]
-lambdaArgs (SList ((SAtom symLambda):(SList arglist):_:[])) =
-        map (fromJust . symbolName) arglist
-lambdaArgs _ = []
-
-lambdaBody :: SExpr -> SExpr
-lambdaBody (SList ((SAtom a):_:body:[])) | a == symLambda   = body
-lambdaBody _ = SError "lambdaBody: error"
+lambdaArgs = map (fromJust . symbolName) . fst . lambdaParts
+lambdaBody = snd . lambdaParts
 
 lambdaParts :: SExpr -> ([SExpr], SExpr)
-lambdaParts (SList ((SAtom a):(SList args):body:[])) | a == symLambda = (args, body)
+lambdaParts f@(SList ((SAtom a):(SList args):body:[])) | isLambda f = (args, body)
 lambdaParts _ = ([], SError "lambdaParts")
 
 applyLambda :: Env -> SExpr -> [SExpr] -> (SExpr, Env)
@@ -184,10 +171,9 @@ applyLambda env func args = (err, env)
 
 makeLambda :: EnvLEvaluator
 makeLambda env ((SList arglist):expr:[]) | all (isJust.symbolName) arglist =
-    (lambda, env) where lambda = SList [SAtom symLambda, SList arglist, expr]
-makeLambda env ((SList arglist):body) | all (isJust.symbolName) arglist =
-    (lambda, env)
-    where lambda = SList [SAtom symLambda, SList arglist, seqExpr]
+    (lambda, env) where lambda = SList [sexpSym "lambda", SList arglist, expr]
+makeLambda env ((SList arglist):body) | all (isJust.symbolName) arglist = (lambda, env)
+    where lambda = SList [sexpSym "lambda", SList arglist, seqExpr]
           seqExpr = SList (sexpSym "begin" : body)
 makeLambda env _ =
     (SError "makeLambda: (lambda (arg1 arg2 ...) expr1 expr2 ...)", env)
@@ -198,28 +184,19 @@ makeLambda env _ =
 
 builtins = map (mapSnd (uncurry sexpEtor)) [
     ("+",       (withEnv ntAdd, 2)),
-    ("-",       (withEnv ntSub, 2)),
+    ("-",       (withEnv ntSub,-1)),
     ("*",       (withEnv ntMul, 2)),
     ("/",       (withEnv ntDiv, 2)),
     ("eq",      (withEnv ntEq,  2)),
     ("<",       (withEnv ntLess,2)),
 
-{-    ("and",     (withEnv ntAnd, 2)),
-    ("or",      (withEnv ntOr,  2)),
-    ("not",     (withEnv ntNot, 1)), -}
-
-    ("print",   (withEnv ntPrint,1)),
     ("read",    (withEnv ntRead,1)),
     ("eval",    (ntEval,        1)),
 
-{-    ("map",     (withEnv ntMap, 2)),
-    ("fold",    (withEnv ntFold,3)),
-    ("filter",  (withEnv ntFlt, 2)), -}
     ("list",    (withEnv ntList,(-1))),
     ("cons",    (withEnv ntCons,2)),
     ("car",     (withEnv ntCAR, 1)),
     ("cdr",     (withEnv ntCDR, 1))]
-
 
 ntAdd, ntMul, ntSub, ntDiv :: LEvaluator
 ntAdd ((SAtom ax):(SAtom ay):[]) = ntAdd' ax ay
@@ -265,23 +242,12 @@ ntEq ((SList lx):(SList ly):[]) = toBoolSym (eqL lx ly)
             isTrue (ntEq [x,y]) && isTrue (ntEq [SList xs, SList ys])
 ntEq _ = SError "EQ requires two arguments"
 
-ntLess ((SAtom ax):(SAtom ay):[]) = toBoolSym $ ntLess' ax ay
-  where ntLess' (AInt x) (AInt y) = x < y
-        ntLess' (AFloat x) (AFloat y) = x < y
-        ntLess' (AString x) (AString y) = x < y
-        ntLess' _ _ = False
+ntLess ((SAtom ax):(SAtom ay):[]) = toBoolSym $ ntL' ax ay
+  where ntL' (AInt x) (AInt y) = x < y
+        ntL' (AFloat x) (AFloat y) = x < y
+        ntL' (AString x) (AString y) = x < y
+        ntL' _ _ = False
 ntLess _ = SError "don't know how to compare"
-
--- TODO
-ntAnd = undefined
-ntOr = undefined
-ntNot = undefined
-
-ntMap = undefined
-ntFold = undefined
-ntFlt = undefined
-
-ntPrint = undefined
 
 ntRead (SAtom a:[]) = case a of
     AString str -> readSExpr str

@@ -9,7 +9,8 @@ import System.IO
 
 commands = "Commands are:\n\
 \  :q    -- quit\n\
-\  :load file.lisp"
+\  :load file.lisp\n\
+\  :env  -- show the envirionment"
 
 cmd :: Env -> [String] -> IO ()
 cmd env args = do
@@ -21,6 +22,7 @@ cmd env args = do
         let (out, env') = eval env ss
         print $ if (isJust$maybeSError out) then out else sexpSym "ok"
         repl env'
+    "env" -> print env >> repl env
     _ -> putStrLn commands >> repl env
 
 repl :: Env -> IO ()

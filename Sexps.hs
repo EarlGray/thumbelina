@@ -71,7 +71,7 @@ toBoolSym b = sexpSym $ if b then bTrue else bFalse
 
 isTrue :: SExpr -> Bool
 isTrue (SList []) = False
-isTrue sym | symbolName sym == Just "nil" = False
+isTrue sym | symbolName sym == Just bFalse = False
 isTrue _ = True
 
 quote :: SExpr -> SExpr
@@ -101,7 +101,7 @@ initEnv vs = Env [ M.fromList vs ]
 
 lookupSymbol :: Env -> String -> SExpr       -- maybe SError
 lookupSymbol env sym = lookupInFrames (frames env) sym
-  where lookupInFrames [] sym     = SError $ "Symbol " ++ show sym ++ " not found"
+  where lookupInFrames [] sym     = SError $ "Symbol " ++ show sym ++ " not bound"
         lookupInFrames (f:fs) sym = fromMaybe (lookupInFrames fs sym) $ M.lookup sym f
 
 stripEnvFrame :: Env -> Env

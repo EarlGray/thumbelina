@@ -18,3 +18,7 @@
 
 (def zero? (eq 0))
 (def len (fold (lambda (n _) (+ 1 n)) 0))
+
+(def (and x y) (if x (if y t nil) nil))
+(def (or x y) (if x t (if y t nil)))
+(def (not x) (if x nil t))
