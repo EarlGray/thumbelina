@@ -18,7 +18,7 @@ cmd env args = do
     "q" -> return ()
     "load" -> do
         file <- readFile $ args!!1
-        let ss = SList (sexpSym "begin" : topSExprs file)
+        let ss = SList (sexpSym "seq" : topSExprs file)
         let (out, env') = eval env ss
         print $ if (isJust$maybeSError out) then out else sexpSym "ok"
         repl env'
@@ -34,7 +34,7 @@ repl env = do
       (':':tl) -> cmd env (words tl)
       _ -> do
         let inp = readSExpr line
-        let (out, env') = eval env inp
+        let (out, env') = env `seq` eval env inp
         print out
         repl env'
 

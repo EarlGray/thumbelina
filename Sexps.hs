@@ -48,6 +48,12 @@ instance Eq Atom where
     (ASymbol x) == (ASymbol y)  = x == y
     _ == _ = False
 
+instance Eq SExpr where
+    (SAtom a1) == (SAtom a2)    = a1 == a2
+    (SList []) == (SList [])    = True
+    (SList (h1:t1)) == (SList (h2:t2)) = (h1 == h2) && (t1 == t2)
+    _ == _                      = False
+
 maybeSError :: SExpr -> Maybe String
 maybeSError s = case s of
     SError err -> Just err

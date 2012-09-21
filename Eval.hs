@@ -56,8 +56,12 @@ specials = [
     ("quote", withEnv evalQuote ),
     ("if",      evalIf          ),
     ("def",     evalDef         ),
-    ("lambda",  makeLambda      ),
-    ("begin",   evalSeq         )]
+    ("fun",  makeLambda      ),
+    ("seq",   evalSeq         )]
+
+symLambda = sexpSym "fun"
+symSeq = sexpSym "seq"
+symDef = sexpSym "def"
 -- TODO: cond, let
 
 evalQuote :: LEvaluator
@@ -136,7 +140,7 @@ evalArgs startenv ss = (tail evalss, last envs)
  -  Lambdas
  -}
 isLambda :: SExpr -> Bool
-isLambda (SList (hd:_)) | isSymbol hd "lambda" = True
+isLambda (SList (hd:_)) | hd == symLambda   = True
 isLambda _ = False
 
 lambdaArgs = map (fromJust . symbolName) . fst . lambdaParts
@@ -158,12 +162,12 @@ applyLambda env func args | length args < length arglist =
     makeLambda env $ [SList newargs, SList newbody]
     where (arglist, body) = lambdaParts func
           (argdefs, newargs) = splitAt (length args) arglist
-          defs = (sexpSym "begin" : map makeDef (zip argdefs args))
-          makeDef (a,d) = SList [sexpSym "def", a, d]
+          defs = (symSeq : map makeDef (zip argdefs args))
+          makeDef (a,d) = SList [symDef, a, d]
           newbody = case body of
                      SAtom atom -> defs ++ [body]
                      SList form -> case form of
-                                    (bg : ss) | isSymbol bg "begin" -> defs ++ ss
+                                    (bg : ss) | bg == symSeq -> defs ++ ss
                                     _ -> defs ++ [body]
 applyLambda env func args = (err, env)
     where err = SError $ "applyLambda: " ++ show (length args) ++
@@ -171,10 +175,10 @@ applyLambda env func args = (err, env)
 
 makeLambda :: EnvLEvaluator
 makeLambda env ((SList arglist):expr:[]) | all (isJust.symbolName) arglist =
-    (lambda, env) where lambda = SList [sexpSym "lambda", SList arglist, expr]
+    (lambda, env) where lambda = SList [symLambda, SList arglist, expr]
 makeLambda env ((SList arglist):body) | all (isJust.symbolName) arglist = (lambda, env)
-    where lambda = SList [sexpSym "lambda", SList arglist, seqExpr]
-          seqExpr = SList (sexpSym "begin" : body)
+    where lambda = SList [symLambda, SList arglist, seqExpr]
+          seqExpr = SList (symSeq : body)
 makeLambda env _ =
     (SError "makeLambda: (lambda (arg1 arg2 ...) expr1 expr2 ...)", env)
 
