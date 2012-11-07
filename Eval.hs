@@ -65,11 +65,11 @@ symDef = sexpSym "def"
 -- TODO: cond, let
 
 evalQuote :: LEvaluator
-evalQuote (sexpr:[]) = sexpr
+evalQuote [sexpr] = sexpr
 evalQuote _ = SError "evalQuote: too many things to quote"
 
 evalIf, evalDef, evalSeq :: EnvLEvaluator
-evalIf env (predf:thenf:elsef:[]) =
+evalIf env [predf, thenf, elsef] =
     let (p, env') = eval env predf
     in case p of
         SError _ -> (p, env')
@@ -78,7 +78,7 @@ evalIf env (predf:thenf:elsef:[]) =
              else eval env elsef
 evalIf env _ = (SError "evalIf: where is my parts?", env)
 
-evalDef env ((SAtom defatom):defval:[]) =
+evalDef env [SAtom defatom, defval] =
   case defatom of
     sym@(ASymbol symname) -> (SAtom sym, envAddSymbol symname evaluatedVal env')
     _ -> (SError "evalDef: a symbol must be defined", env)
@@ -93,7 +93,7 @@ evalDef env ((SList defun):defbody) =
     _ -> (SError "function name must be an atom", env)
 evalDef env _ = (SError "evalDef: def error", env)
 
-evalSeq env (sexpr:[]) = eval env sexpr
+evalSeq env [sexpr] = eval env sexpr
 evalSeq env (this:next) = evalSeq (snd $ eval env this) next
 evalSeq env _ = (SError "evalSeq: empty sequence?", env)
 
@@ -147,7 +147,7 @@ lambdaArgs = map (fromJust . symbolName) . fst . lambdaParts
 lambdaBody = snd . lambdaParts
 
 lambdaParts :: SExpr -> ([SExpr], SExpr)
-lambdaParts f@(SList ((SAtom a):(SList args):body:[])) | isLambda f = (args, body)
+lambdaParts f@(SList [SAtom a, SList args, body]) | isLambda f = (args, body)
 lambdaParts _ = ([], SError "lambdaParts")
 
 applyLambda :: Env -> SExpr -> [SExpr] -> (SExpr, Env)
@@ -174,7 +174,7 @@ applyLambda env func args = (err, env)
                    " arguments for func/" ++ show (length $ lambdaArgs func)
 
 makeLambda :: EnvLEvaluator
-makeLambda env ((SList arglist):expr:[]) | all (isJust.symbolName) arglist =
+makeLambda env [SList arglist, expr] | all (isJust.symbolName) arglist =
     (lambda, env) where lambda = SList [symLambda, SList arglist, expr]
 makeLambda env ((SList arglist):body) | all (isJust.symbolName) arglist = (lambda, env)
     where lambda = SList [symLambda, SList arglist, seqExpr]
@@ -201,30 +201,35 @@ builtins = map (mapSnd (uncurry sexpEtor)) [
     ("to-float",(withEnv ntToFl, 1)),   -- Float -> Int
     ("to-int",  (withEnv ntToInt,1)),   -- Int -> Float
 
+    --(".",       (withEnv ntComp,(-1))),
     ("list",    (withEnv ntList,(-1))), -- make a List
     ("cons",    (withEnv ntCons,2)),    -- (SExpr, SExpr) -> List
     ("car",     (withEnv ntCAR, 1)),    -- List -> SExpr
     ("cdr",     (withEnv ntCDR, 1))]    -- List -> List
 
+-- ntComp :: LEvalutor
+-- ntComp ((SList (symLambda:args:body)):tl) =
+    
+
 ntAdd, ntMul, ntSub, ntDiv :: LEvaluator
-ntAdd ((SAtom ax):(SAtom ay):[]) = ntAdd' ax ay
+ntAdd [SAtom ax, SAtom ay] = ntAdd' ax ay
   where ntAdd' (AInt xi) (AInt yi)      = sexpInt (xi + yi)
         ntAdd' (AFloat xf) (AFloat yf)  = sexpFloat (xf + yf)
         ntAdd' (AString xs) (AString ys)= sexpStr (xs ++ ys)
         ntAdd' _ _ = SError "Add: type mismatch"
 ntAdd _ = SError "Add requires two atom arguments"
 
-ntSub ((SAtom a):[]) = case a of
+ntSub [SAtom a] = case a of
     AInt i -> sexpInt (-i)
     AFloat f -> sexpFloat (-f)
     _ -> SError "only numbers may be negated"
-ntSub ((SAtom ax):(SAtom ay):[]) = ntSub' ax ay
+ntSub [SAtom ax, SAtom ay] = ntSub' ax ay
   where ntSub' (AInt x)  (AInt y)     = sexpInt (x - y)
         ntSub' (AFloat x) (AFloat y)  = sexpFloat (x - y)
         ntSub' _ _ = SError "Sub: type mismatch"
 ntSub _ = SError "Sub requires two atom arguments"
 
-ntMul ((SAtom ax):(SAtom ay):[]) = ntMul' ax ay
+ntMul [SAtom ax, SAtom ay] = ntMul' ax ay
   where ntMul' (AInt xi)   (AInt yi)    = sexpInt (xi * yi)
         ntMul' (AFloat xf) (AFloat yf)  = sexpFloat (xf * yf)
         ntMul' (AString xs) (AInt yi)   =
@@ -232,7 +237,7 @@ ntMul ((SAtom ax):(SAtom ay):[]) = ntMul' ax ay
         ntMul' _ _ = SError "ntMul: type mismatch"
 ntMul _ = SError "Mul requires two atom arguments"
 
-ntDiv ((SAtom ax):(SAtom ay):[]) = ntDiv' ax ay
+ntDiv [SAtom ax, SAtom ay] = ntDiv' ax ay
   where ntDiv' (AInt x) (AInt y) | y /= 0    = sexpInt $ x `div` y
                                  | otherwise = SError "division by zero"
         ntDiv' (AFloat x) (AFloat y) | y /= 0   = sexpFloat $ x / y
@@ -241,8 +246,8 @@ ntDiv ((SAtom ax):(SAtom ay):[]) = ntDiv' ax ay
 ntDiv _ = SError "only numbers may be divided"
 
 ntEq, ntLess :: LEvaluator
-ntEq ((SAtom ax):(SAtom ay):[]) = toBoolSym (ax == ay)
-ntEq ((SList lx):(SList ly):[]) = toBoolSym (eqL lx ly)
+ntEq [SAtom ax, SAtom ay] = toBoolSym (ax == ay)
+ntEq [SList lx, SList ly] = toBoolSym (eqL lx ly)
   where eqL [] [] = True
         eqL _ [] = False
         eqL [] _ = False
@@ -250,46 +255,46 @@ ntEq ((SList lx):(SList ly):[]) = toBoolSym (eqL lx ly)
             isTrue (ntEq [x,y]) && isTrue (ntEq [SList xs, SList ys])
 ntEq _ = SError "EQ requires two arguments"
 
-ntLess ((SAtom ax):(SAtom ay):[]) = toBoolSym $ ntL' ax ay
+ntLess [SAtom ax, SAtom ay] = toBoolSym $ ntL' ax ay
   where ntL' (AInt x) (AInt y) = x < y
         ntL' (AFloat x) (AFloat y) = x < y
         ntL' (AString x) (AString y) = x < y
         ntL' _ _ = False
 ntLess _ = SError "don't know how to compare"
 
-ntRead (SAtom a:[]) = case a of
+ntRead [SAtom a] = case a of
     AString str -> readSExpr str
     _ -> SError "read: not a string"
 ntRead _ = SError "read: string expected"
 
-ntEval env (sexpr:[]) = eval env' sexpr'
+ntEval env [sexpr] = eval env' sexpr'
     where (sexpr', env') = eval env sexpr
 
 ntList vals = SList vals
 
-ntCons (sexpr:(SList tl):[]) = SList (sexpr:tl)
+ntCons [sexpr, SList tl] = SList (sexpr:tl)
 ntCons _ = SError "CONS arg error"
 
 ntCAR, ntCDR :: LEvaluator
-ntCAR ((SList list):[]) = case list of
+ntCAR [SList list] = case list of
     (t:_) -> t
     _ -> SError "CAR at empty list"
 ntCAR _ = SError "CAR requires one list argument"
 
-ntCDR ((SList list):[]) = case list of
+ntCDR [SList list] = case list of
     (_:t) -> SList t
     _ -> SError "CDR: no tail"
 ntCDR _ = SError "CDR requires one list argument"
 
-ntToLst ((SAtom a):[]) = case a of
+ntToLst [SAtom a] = case a of
     AString str -> SList $ map (sexpStr . return) str
     _ -> SError "a string expected"
 ntToLst _ = SError "a string exprected"
 
-ntToInt ((SAtom (AFloat f)):[]) = sexpInt $ floor f
+ntToInt [SAtom (AFloat f)] = sexpInt $ floor f
 ntToInt _ = SError "a float expected"
 
-ntToFl ((SAtom (AInt i)):[]) = sexpFloat $ fromInteger i
+ntToFl [SAtom (AInt i)] = sexpFloat $ fromInteger i
 ntToFl _ = SError "an int expected"
 
 
