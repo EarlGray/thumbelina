@@ -2,7 +2,7 @@ module Sexps (
     SExpr(..), Atom(..), LEvaluator,
 
     sexpInt, sexpFloat, sexpStr, sexpSym, sexpEtor,
-    symbolName, isSymbol, quote, maybeSError,
+    symbolName, isSymbol, sexpQuote, maybeSError,
     isTrue, bTrue, bFalse, toBoolSym,
 
     EnvEvaluator, EnvLEvaluator, Env,
@@ -80,8 +80,8 @@ isTrue (SList []) = False
 isTrue sym | symbolName sym == Just bFalse = False
 isTrue _ = True
 
-quote :: SExpr -> SExpr
-quote sexp = SList [sexpSym "quote", sexp]
+sexpQuote :: SExpr -> SExpr
+sexpQuote sexp = SList [sexpSym "quote", sexp]
 
 {-
  - Environments

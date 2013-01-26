@@ -29,13 +29,14 @@ snum = do
         _ -> fail "no int"
 sstring = sexpStr <$> (char '"' >> quotedChar `manyTill` (char '"'))
 ssym = sexpSym <$> many1 symchars
-squote = quote <$> (char '\'' >> sexpParser)
+squote = sexpQuote <$> (char '\'' >> sexpParser)
 
-quotedChar = (char '\\' >> ((oneOf (fst$unzip escapes) >>= return . fromJust . flip lookup escapes) <|> anyChar)) <|> anyChar
+quotedChar = (char '\\' >> ((fromJust . flip lookup escapes <$> oneOf escaped) <|> anyChar)) <|> anyChar
 symchars = noneOf "'(); \n\t"
 
 seps = spaces *> optional comment
 comment = char ';' >> many (noneOf "\n") <* spaces
-escapes = zip "ntr" "\n\t\r"
+escaped = "ntr"
+escapes = zip escaped "\n\t\r"
 
 fromEither = flip either id
