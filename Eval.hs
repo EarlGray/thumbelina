@@ -4,6 +4,7 @@ import Sexps
 import Read
 
 import Data.Maybe (fromMaybe, fromJust, isJust)
+import Data.List (intercalate)
 
 {--
  - Eval
@@ -195,6 +196,7 @@ builtins = map (mapSnd (uncurry sexpEtor)) [
     ("<",       (withEnv ntLess,2)),    -- Strings, Ints, Floats
 
     ("read",    (withEnv ntRead,1)),    -- String -> SExpr
+    ("show",    (withEnv ntShow,1)),    -- SExpr -> String
     ("eval",    (ntEval,        1)),    -- SExpr -> SExpr (side-effects)
 
     ("to-list", (withEnv ntToLst,1)),   -- String -> List
@@ -266,6 +268,11 @@ ntRead [SAtom a] = case a of
     AString str -> readSExpr str
     _ -> SError "read: not a string"
 ntRead _ = SError "read: string expected"
+
+ntShow :: LEvaluator
+ntShow [SAtom a] = sexpStr $ show a
+ntShow [SList ss] = sexpStr $ "(" ++ intercalate " " (map show ss) ++ ")"
+ntShow _ = SError "show: only one argument is accepted"
 
 ntEval env [sexpr] = eval env' sexpr'
     where (sexpr', env') = eval env sexpr
