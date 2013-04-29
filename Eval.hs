@@ -198,6 +198,7 @@ builtins = map (mapSnd (uncurry sexpEtor)) [
     ("read",    (withEnv ntRead,1)),    -- String -> SExpr
     ("show",    (withEnv ntShow,1)),    -- SExpr -> String
     ("eval",    (ntEval,        1)),    -- SExpr -> SExpr (side-effects)
+    ("apply",   (ntApply,       2)),    -- SExpr -> SExpr -> SExpr
 
     ("to-list", (withEnv ntToLst,1)),   -- String -> List
     ("to-float",(withEnv ntToFl, 1)),   -- Float -> Int
@@ -268,6 +269,9 @@ ntRead [SAtom a] = case a of
     AString str -> readSExpr str
     _ -> SError "read: not a string"
 ntRead _ = SError "read: string expected"
+
+ntApply :: EnvLEvaluator
+ntApply env [what, args] = (sexpStr "TODO", env)
 
 ntShow :: LEvaluator
 ntShow [SAtom a] = sexpStr $ show a
